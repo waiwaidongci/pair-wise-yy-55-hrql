@@ -4,11 +4,12 @@ import { DeleteOutlined, PlusOutlined, RedoOutlined, UndoOutlined } from '@ant-d
 import { useDispatch, useSelector } from 'react-redux'
 import { Accidental, Formatter, Renderer, Stave, StaveNote, Voice } from 'vexflow'
 import type { AppDispatch, RootState } from '../store'
-import { addNote, redo, removeNote, selectNote, selectTrack, transposeTrack, undo, updateNote } from '../store'
+import { addNote, redo, removeNote, selectNote, selectTrack, selectScoreView, transposeTrack, undo, updateNote } from '../store'
 
 export default function ScoreEditor() {
   const dispatch = useDispatch<AppDispatch>()
-  const { tracks, selectedTrackId, selectedNoteIndex, history, future, dirty } = useSelector((state: RootState) => state.score)
+  const { selectedTrackId, selectedNoteIndex } = useSelector((state: RootState) => state.score)
+  const { tracks, history, future, dirty, isDraft, draftEditorName } = useSelector(selectScoreView)
   const track = tracks.find((item) => item.id === selectedTrackId)!
   const note = track.notes[selectedNoteIndex]
   const scoreRef = useRef<HTMLDivElement>(null)
@@ -43,7 +44,7 @@ export default function ScoreEditor() {
 
   const update = (patch: Parameters<typeof updateNote>[0] extends never ? never : Record<string, unknown>) => dispatch(updateNote(patch as never))
   return <main className="page">
-    <div className="page-head"><div><p className="eyebrow">五线谱编辑与移调</p><h1>多声部总谱</h1><p>选择音符后可编辑时值、力度、连音、表情和移调；所有操作支持撤销重做。</p></div><Space><Tag color={dirty ? 'orange' : 'green'}>{dirty ? '有未保存修改' : '已保存'}</Tag><Tooltip title="撤销"><Button icon={<UndoOutlined />} disabled={!history.length} onClick={() => dispatch(undo())} /></Tooltip><Tooltip title="重做"><Button icon={<RedoOutlined />} disabled={!future.length} onClick={() => dispatch(redo())} /></Tooltip></Space></div>
+    <div className="page-head"><div><p className="eyebrow">五线谱编辑与移调</p><h1>多声部总谱</h1><p>选择音符后可编辑时值、力度、连音、表情和移调；改动先进入当前编辑的待合并草稿，由出版编辑逐项合并。</p></div><Space>{isDraft && <Tag color="blue">草稿 · {draftEditorName} 的待合并改动</Tag>}<Tag color={dirty ? 'orange' : 'green'}>{dirty ? '有未合并改动' : '已与工作副本同步'}</Tag><Tooltip title="撤销"><Button icon={<UndoOutlined />} disabled={!history.length} onClick={() => dispatch(undo())} /></Tooltip><Tooltip title="重做"><Button icon={<RedoOutlined />} disabled={!future.length} onClick={() => dispatch(redo())} /></Tooltip></Space></div>
     <div className="score-toolbar"><Segmented value={selectedTrackId} options={tracks.map((item) => ({ label: item.name, value: item.id }))} onChange={(value) => dispatch(selectTrack(String(value)))} /><span style={{flex:1}} /><Button onClick={() => dispatch(transposeTrack(-1))}>降半音</Button><Button onClick={() => dispatch(transposeTrack(1))}>升半音</Button><Select value={track.transposition} style={{width:120}} options={[-12,-7,-5,-2,0,2,5,7,12].map((value)=>({value,label:`移调 ${value > 0 ? '+' : ''}${value}`}))} onChange={(value) => dispatch(transposeTrack(value - track.transposition))} /></div>
     <Alert type="info" showIcon message={`${track.instrument} · ${track.clef === 'treble' ? '高音谱号' : track.clef === 'bass' ? '低音谱号' : '中音谱号'}`} description="当前显示移调后的实际记谱音高。移调仅改变当前声部，不修改总谱其他声部。" style={{ marginBottom: 12 }} />
     <div className="score-grid">
