@@ -1,17 +1,26 @@
-import { useEffect, useRef } from 'react'
-import { Alert, Button, Divider, Segmented, Select, Space, Tag, Tooltip } from 'antd'
+import { useEffect, useMemo, useRef } from 'react'
+import { Alert, Button, Divider, Segmented, Select, Space, Tag, Tooltip, List, Badge } from 'antd'
 import { DeleteOutlined, PlusOutlined, RedoOutlined, UndoOutlined } from '@ant-design/icons'
 import { useDispatch, useSelector } from 'react-redux'
 import { Accidental, Formatter, Renderer, Stave, StaveNote, Voice } from 'vexflow'
 import type { AppDispatch, RootState } from '../store'
 import { addNote, redo, removeNote, selectNote, selectTrack, transposeTrack, undo, updateNote } from '../store'
+import { diffDraft, fullTimeText, trackImpacts } from '../merge/engine'
 
 export default function ScoreEditor() {
   const dispatch = useDispatch<AppDispatch>()
-  const { tracks, selectedTrackId, selectedNoteIndex, history, future, dirty } = useSelector((state: RootState) => state.score)
-  const track = tracks.find((item) => item.id === selectedTrackId)!
-  const note = track.notes[selectedNoteIndex]
+  const state = useSelector((root: RootState) => root.score)
+  const { drafts, selectedTrackId, selectedNoteIndex, history, future, dirty, activeEditor } = state
+  const draft = drafts.find((item) => item.editorId === activeEditor)!
+  const tracks = draft.tracks
+  const track = tracks.find((item) => item.id === selectedTrackId) ?? tracks[0]!
+  const safeIndex = Math.min(selectedNoteIndex, track.notes.length - 1)
+  const note = track.notes[safeIndex]
   const scoreRef = useRef<HTMLDivElement>(null)
+
+  const myChanges = useMemo(() => diffDraft(draft, tracks), [draft, tracks])
+  const impacts = useMemo(() => trackImpacts(drafts, state.canonicalTracks, state.comments), [drafts, state.canonicalTracks, state.comments])
+  const currentTrackImpact = impacts.find((item) => item.trackId === track.id)
 
   useEffect(() => {
     const element = scoreRef.current
@@ -41,14 +50,59 @@ export default function ScoreEditor() {
     })
   }, [track])
 
-  const update = (patch: Parameters<typeof updateNote>[0] extends never ? never : Record<string, unknown>) => dispatch(updateNote(patch as never))
+  const update = (patch: Record<string, unknown>) => dispatch(updateNote(patch as never))
+  const changedIds = new Set(myChanges.map((change) => change.anchor.noteId))
   return <main className="page">
-    <div className="page-head"><div><p className="eyebrow">五线谱编辑与移调</p><h1>多声部总谱</h1><p>选择音符后可编辑时值、力度、连音、表情和移调；所有操作支持撤销重做。</p></div><Space><Tag color={dirty ? 'orange' : 'green'}>{dirty ? '有未保存修改' : '已保存'}</Tag><Tooltip title="撤销"><Button icon={<UndoOutlined />} disabled={!history.length} onClick={() => dispatch(undo())} /></Tooltip><Tooltip title="重做"><Button icon={<RedoOutlined />} disabled={!future.length} onClick={() => dispatch(redo())} /></Tooltip></Space></div>
-    <div className="score-toolbar"><Segmented value={selectedTrackId} options={tracks.map((item) => ({ label: item.name, value: item.id }))} onChange={(value) => dispatch(selectTrack(String(value)))} /><span style={{flex:1}} /><Button onClick={() => dispatch(transposeTrack(-1))}>降半音</Button><Button onClick={() => dispatch(transposeTrack(1))}>升半音</Button><Select value={track.transposition} style={{width:120}} options={[-12,-7,-5,-2,0,2,5,7,12].map((value)=>({value,label:`移调 ${value > 0 ? '+' : ''}${value}`}))} onChange={(value) => dispatch(transposeTrack(value - track.transposition))} /></div>
-    <Alert type="info" showIcon message={`${track.instrument} · ${track.clef === 'treble' ? '高音谱号' : track.clef === 'bass' ? '低音谱号' : '中音谱号'}`} description="当前显示移调后的实际记谱音高。移调仅改变当前声部，不修改总谱其他声部。" style={{ marginBottom: 12 }} />
+    <div className="page-head">
+      <div>
+        <p className="eyebrow">离线待合并草稿 · {draft.role} {draft.editorName}</p>
+        <h1>多声部总谱</h1>
+        <p>改动只进入「{draft.editorName}」的待合并草稿，按音符/评论锚点记录来源与时间；网络恢复后由出版编辑在合并台逐项处理，冲突不会静默覆盖。</p>
+      </div>
+      <Space>
+        <Tag color={dirty ? 'orange' : 'green'}>{dirty ? `草稿已离线保存 · ${fullTimeText(draft.updatedAt)}` : '草稿无改动'}</Tag>
+        <Tooltip title="撤销（仅本草稿）"><Button icon={<UndoOutlined />} disabled={!history.length} onClick={() => dispatch(undo())} /></Tooltip>
+        <Tooltip title="重做"><Button icon={<RedoOutlined />} disabled={!future.length} onClick={() => dispatch(redo())} /></Tooltip>
+      </Space>
+    </div>
+    <div className="score-toolbar">
+      <Segmented value={track.id} options={tracks.map((item) => ({ label: <span>{item.name}{impacts.find((impact) => impact.trackId === item.id)?.pending ? <Badge status="processing" /> : null}</span>, value: item.id }))} onChange={(value) => dispatch(selectTrack(String(value)))} />
+      <span style={{ flex: 1 }} />
+      <Button onClick={() => dispatch(transposeTrack(-1))}>降半音</Button>
+      <Button onClick={() => dispatch(transposeTrack(1))}>升半音</Button>
+      <Select value={track.transposition} style={{ width: 120 }} options={[-12,-7,-5,-2,0,2,5,7,12].map((value)=>({value,label:`移调 ${value > 0 ? '+' : ''}${value}`}))} onChange={(value) => dispatch(transposeTrack(value - track.transposition))} />
+    </div>
+    <Alert
+      type={currentTrackImpact?.conflicts ? 'error' : 'warning'}
+      showIcon
+      style={{ marginBottom: 12 }}
+      message={
+        currentTrackImpact?.conflicts
+          ? `该声部有 ${currentTrackImpact.conflicts} 项冲突/阻塞项，必须由出版编辑逐项选边，不会自动覆盖`
+          : currentTrackImpact?.pending
+            ? `该声部有 ${currentTrackImpact.pending} 项来自其他编辑的待合并改动`
+            : `${track.instrument} · 草稿隔离编辑中`
+      }
+      description={myChanges.length ? `本草稿已记录 ${myChanges.length} 处锚点改动，最近更新 ${fullTimeText(draft.updatedAt)}；分谱页会持续提示该声部受未合并改动影响。` : '本草稿尚未偏离合并基线。'}
+    />
     <div className="score-grid">
-      <section><div className="score-canvas-wrap" ref={scoreRef} /><div className="note-strip">{track.notes.map((item,index)=><button key={item.id} className={`note-chip ${index===selectedNoteIndex?'active':''}`} onClick={()=>dispatch(selectNote(index))}><b>{index+1}</b><small>{item.key.replace('/', '')} · {item.dynamic}</small></button>)}</div><Space wrap><Button icon={<PlusOutlined />} onClick={()=>dispatch(addNote())}>添加音符</Button><Button danger icon={<DeleteOutlined />} onClick={()=>dispatch(removeNote())}>删除当前</Button><Button onClick={()=>update({ duration: note?.duration === 'q' ? 'h' : note?.duration === 'h' ? '8' : 'q' })}>切换时值</Button><Button onClick={()=>update({ tie: !note?.tie })}>{note?.tie ? '取消延音' : '增加延音'}</Button><Button onClick={()=>update({ accidental: note?.accidental ? undefined : '#' })}>{note?.accidental ? '移除临时记号' : '增加升号'}</Button></Space></section>
-      <aside className="panel"><h3>音符属性</h3><label>力度</label><Select value={note?.dynamic} style={{width:'100%'}} options={['pp','p','mp','mf','f','ff'].map((value)=>({value,label:value}))} onChange={(value)=>update({ dynamic:value })} /><label>表情标记</label><Select value={note?.expression} allowClear style={{width:'100%'}} options={[{value:'dolce',label:'dolce 柔和地'},{value:'cantabile',label:'cantabile 如歌地'},{value:'marcato',label:'marcato 着重地'}]} onChange={(value)=>update({ expression:value ?? '' })} /><Divider /><h3>和弦与节奏校验</h3><div className="check-row"><span>小节拍数</span><b className="success">完整</b></div><div className="check-row"><span>声部音域</span><b className="success">符合</b></div><div className="check-row"><span>移调范围</span><b className="warning">圆号需复核</b></div><Alert type="warning" showIcon message="第 2 小节力度冲突" description="指挥评论要求圆号再弱一级，请应用评论后形成新版本。" style={{ marginTop: 14 }} /></aside>
+      <section>
+        <div className="score-canvas-wrap" ref={scoreRef} />
+        <div className="note-strip">{track.notes.map((item,index)=><button key={item.id} className={`note-chip ${index===selectedNoteIndex?'active':''} ${changedIds.has(item.id)?'changed':''}`} onClick={()=>dispatch(selectNote(index))}><b>{index+1}</b><small>{item.key.replace('/', '')} · {item.dynamic}</small>{changedIds.has(item.id) && <em className="chip-dot">改</em>}</button>)}</div>
+        <Space wrap><Button icon={<PlusOutlined />} onClick={()=>dispatch(addNote())}>添加音符</Button><Button danger icon={<DeleteOutlined />} onClick={()=>dispatch(removeNote())}>删除当前</Button><Button onClick={()=>update({ duration: note?.duration === 'q' ? 'h' : note?.duration === 'h' ? '8' : 'q' })}>切换时值</Button><Button onClick={()=>update({ tie: !note?.tie })}>{note?.tie ? '取消延音' : '增加延音'}</Button><Button onClick={()=>update({ accidental: note?.accidental ? undefined : '#' })}>{note?.accidental ? '移除临时记号' : '增加升号'}</Button></Space>
+      </section>
+      <aside className="panel">
+        <h3>音符属性（草稿）</h3>
+        <label>力度</label><Select value={note?.dynamic} style={{width:'100%'}} options={['pp','p','mp','mf','f','ff'].map((value)=>({value,label:value}))} onChange={(value)=>update({ dynamic:value })} />
+        <label>表情标记</label><Select value={note?.expression} allowClear style={{width:'100%'}} options={[{value:'dolce',label:'dolce 柔和地'},{value:'cantabile',label:'cantabile 如歌地'},{value:'marcato',label:'marcato 着重地'}]} onChange={(value)=>update({ expression:value ?? '' })} />
+        <Divider /><h3>本草稿改动锚点</h3>
+        <List
+          size="small"
+          dataSource={myChanges.slice(-8).reverse()}
+          locale={{ emptyText: '暂无改动' }}
+          renderItem={(change) => <List.Item><span>{change.label}</span><Tag>{fullTimeText(change.time).slice(6)}</Tag></List.Item>}
+        />
+      </aside>
     </div>
   </main>
 }

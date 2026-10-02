@@ -20,5 +20,20 @@ body { margin: 0; min-width: 320px; }
 .part-page { background:#fff; border:1px solid #d8dee7; border-radius:5px; padding:28px; min-height:520px; box-shadow:0 6px 18px #1018280d; }
 .part-measure { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin:24px 0; }.part-note { border-bottom:1px solid #94a3b8; padding:8px 3px; text-align:center; font-family:serif; }
 .diff-row { display:grid; grid-template-columns:90px 1fr auto; gap:12px; align-items:center; padding:11px 0; border-bottom:1px solid #edf0f5; }
+.recovery-banner { padding:10px 20px; }
+.loss-pre { margin:6px 0 0; white-space:pre-wrap; font-size:12px; background:#fff7ed; border:1px solid #fed7aa; border-radius:6px; padding:8px; max-height:180px; overflow:auto; }
+.note-chip { position:relative; } .note-chip.changed { border-color:#f59e0b; background:#fffbeb; }
+.chip-dot { position:absolute; top:-8px; right:-6px; font-style:normal; font-size:10px; background:#f59e0b; color:#fff; border-radius:8px; padding:0 5px; line-height:15px; }
+.impact-chip { display:inline-flex; align-items:center; gap:6px; } .impact-chip small { color:#92400e; }
+.part-note.note-pending { background:#fffbeb; border-bottom-color:#f59e0b; } .part-note.note-conflict { background:#fef2f2; border-bottom:2px solid #dc2626; }
+.merge-item { border-left:4px solid #2563eb; } .merge-item.conflict { border-left-color:#dc2626; background:#fffafa; } .merge-item.blocked { border-left-color:#d97706; background:#fffdf5; }
+.merge-item-head { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:8px; flex-wrap:wrap; }
+.merge-reasons { margin:0 0 8px; padding-left:18px; color:#b91c1c; font-size:12px; } .merge-reasons li { margin:2px 0; }
+.merge-choices { width:100%; } .merge-choices .ant-radio-wrapper { display:flex; align-items:flex-start; margin:6px 0; padding:6px 8px; border:1px dashed #e2e8f0; border-radius:6px; width:100%; }
+.choice-merged { background:#f0f5ff; }
+.draft-change-list { margin:0; padding-left:18px; } .draft-change-list li { margin:4px 0; font-size:13px; }
+.recheck-row { display:grid; grid-template-columns:80px 1fr auto; gap:10px; padding:12px 0; border-bottom:1px solid #edf0f5; align-items:start; }
+.loss-list { margin:6px 0; padding-left:18px; max-height:220px; overflow:auto; font-size:12px; } .loss-list li { margin:3px 0; }
+.muted { color:#667085; }
 @media(max-width:1050px){.score-grid{grid-template-columns:1fr}.metrics{grid-template-columns:1fr 1fr}}@media(max-width:620px){.page{padding:12px}.page-head{flex-direction:column}.metrics{grid-template-columns:1fr}.part-page{padding:16px;overflow:auto}.part-measure{min-width:620px}}
 @media print{.no-print{display:none!important}.ant-layout-sider,.ant-layout-header{display:none!important}.page{padding:0;max-width:none}.part-page{border:0;box-shadow:none}}
